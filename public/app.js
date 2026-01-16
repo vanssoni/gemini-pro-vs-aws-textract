@@ -64,6 +64,20 @@ dropzone.addEventListener('click', (e) => {
     }
 });
 
+// Download stitched PDF button
+downloadStitchedBtn.addEventListener('click', () => {
+    if (stitchedPdfBlob) {
+        const url = URL.createObjectURL(stitchedPdfBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'stitched-pdf.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+});
+
 // Copy buttons
 copyGemini.addEventListener('click', () => copyToClipboard(geminiText.textContent, copyGemini));
 copyTextract.addEventListener('click', () => copyToClipboard(textractText.textContent, copyTextract));
