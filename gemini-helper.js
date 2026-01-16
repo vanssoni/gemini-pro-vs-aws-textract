@@ -145,7 +145,11 @@ class GeminiHelper {
             const response = await result.response;
             const text = response.text();
 
-            return text;
+            // Return both text and stitched PDF
+            return {
+                text: text,
+                stitchedPdf: base64Data
+            };
         } catch (error) {
             console.error('Gemini extraction error:', error);
             throw new Error(`Gemini extraction failed: ${error.message}`);

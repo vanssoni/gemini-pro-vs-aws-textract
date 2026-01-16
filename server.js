@@ -40,14 +40,15 @@ app.post('/api/extract/gemini', upload.single('pdf'), async (req, res) => {
         const startTime = Date.now();
 
         try {
-            const text = await geminiHelper.extractTextFromPDF(fileBuffer, req.file.mimetype);
+            const result = await geminiHelper.extractTextFromPDF(fileBuffer, req.file.mimetype);
             const time = Date.now() - startTime;
 
             res.json({
                 success: true,
                 service: 'gemini',
-                text: text,
+                text: result.text,
                 time: time,
+                stitchedPdf: result.stitchedPdf, // Base64 encoded stitched PDF
                 error: null
             });
         } catch (error) {

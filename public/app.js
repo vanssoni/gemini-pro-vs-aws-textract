@@ -176,7 +176,23 @@ function displayGeminiResult(data) {
         geminiTime.querySelector('.time-value').textContent = formatTime(data.time);
         geminiTime.querySelector('.time-value').style.color = '#48bb78';
         geminiCharCount.textContent = `${data.text.length.toLocaleString()} characters`;
+
+        // Store stitched PDF for download
+        if (data.stitchedPdf) {
+            stitchedPdfBlob = base64ToBlob(data.stitchedPdf, 'application/pdf');
+            document.getElementById('downloadStitchedBtn').style.display = 'block';
+        }
     }
+}
+
+function base64ToBlob(base64, mimeType) {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
 }
 
 function displayTextractResult(data) {
