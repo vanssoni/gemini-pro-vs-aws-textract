@@ -1,6 +1,9 @@
 // DOM Elements
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
+// Download stitched PDF button
+const downloadStitchedBtn = document.getElementById('downloadStitchedBtn');
+// New upload button
 const uploadButton = document.getElementById('uploadButton');
 const fileInfo = document.getElementById('fileInfo');
 const fileName = document.getElementById('fileName');
@@ -108,60 +111,73 @@ function formatFileSize(bytes) {
 async function processFile() {
     if (!selectedFile) return;
 
-    // Show loading briefly
+    // Show loading
     uploadSection.style.display = 'none';
     loadingSection.style.display = 'block';
     resultsSection.style.display = 'none';
 
-    // Show results section immediately
-    setTimeout(() => {
-        loadingSection.style.display = 'none';
-        resultsSection.style.display = 'block';
-    }, 100);
+    try {
+        // Stitch PDF pages (6 per image)
+        loadingSection.querySelector('.loading-text').textContent = 'Stitching PDF pages (6 per image)...';
+        const { blob: stitchedBlob, images } = await stitchPDFPages(selectedFile);
+        stitchedPdfBlob = stitchedBlob;
 
-    // Reset results to loading state
-    geminiText.innerHTML = '<p class="placeholder-text">Processing with Gemini...</p>';
-    textractText.innerHTML = '<p class="placeholder-text">Processing with Textract...</p>';
-    geminiTime.querySelector('.time-value').textContent = '...';
-    textractTime.querySelector('.time-value').textContent = '...';
+        console.log(`Stitched ${images.length} images from ${selectedFile.name}`);
 
-    // Create separate FormData for Gemini
-    const formDataGemini = new FormData();
-    formDataGemini.append('pdf', selectedFile);
+        // Show results section immediately
+        setTimeout(() => {
+            loadingSection.style.display = 'none';
+            resultsSection.style.display = 'block';
+            document.getElementById('downloadStitchedBtn').style.display = 'block';
+        }, 100);
 
-    // Create separate FormData for Textract
-    const formDataTextract = new FormData();
-    formDataTextract.append('pdf', selectedFile);
+        // Reset results to loading state
+        geminiText.innerHTML = '<p class="placeholder-text">Processing with Gemini...</p>';
+        textractText.innerHTML = '<p class="placeholder-text">Processing with Textract...</p>';
+        geminiTime.querySelector('.time-value').textContent = '...';
+        textractTime.querySelector('.time-value').textContent = '...';
 
-    // Call both endpoints in parallel - they will complete independently
-    const geminiPromise = fetch('/api/extract/gemini', {
-        method: 'POST',
-        body: formDataGemini
-    }).then(res => res.json()).then(data => {
-        displayGeminiResult(data);
-    }).catch(error => {
-        console.error('Gemini request error:', error);
-        displayGeminiResult({
-            success: false,
-            error: error.message
+        // Create separate FormData for Gemini (stitched PDF)
+        const formDataGemini = new FormData();
+        formDataGemini.append('pdf', stitchedBlob, 'stitched.pdf');
+
+        // Create separate FormData for Textract (original PDF)
+        const formDataTextract = new FormData();
+        formDataTextract.append('pdf', selectedFile);
+
+        // Call both endpoints in parallel
+        const geminiPromise = fetch('/api/extract/gemini', {
+            method: 'POST',
+            body: formDataGemini
+        }).then(res => res.json()).then(data => {
+            displayGeminiResult(data);
+        }).catch(error => {
+            console.error('Gemini request error:', error);
+            displayGeminiResult({
+                success: false,
+                error: error.message
+            });
         });
-    });
 
-    const textractPromise = fetch('/api/extract/textract', {
-        method: 'POST',
-        body: formDataTextract
-    }).then(res => res.json()).then(data => {
-        displayTextractResult(data);
-    }).catch(error => {
-        console.error('Textract request error:', error);
-        displayTextractResult({
-            success: false,
-            error: error.message
+        const textractPromise = fetch('/api/extract/textract', {
+            method: 'POST',
+            body: formDataTextract
+        }).then(res => res.json()).then(data => {
+            displayTextractResult(data);
+        }).catch(error => {
+            console.error('Textract request error:', error);
+            displayTextractResult({
+                success: false,
+                error: error.message
+            });
         });
-    });
 
-    // Wait for both to complete (but they update UI independently)
-    await Promise.allSettled([geminiPromise, textractPromise]);
+        await Promise.allSettled([geminiPromise, textractPromise]);
+    } catch (error) {
+        console.error('Stitching error:', error);
+        alert('Error stitching PDF: ' + error.message);
+        resetToUpload();
+    }
 }
 
 function displayGeminiResult(data) {
