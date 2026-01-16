@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { PDFDocument } = require('pdf-lib');
 const { createCanvas, loadImage } = require('canvas');
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+const pdfjsLib = require('pdfjs-dist');
 
 // Polyfills for fetch
 if (!globalThis.fetch) {
