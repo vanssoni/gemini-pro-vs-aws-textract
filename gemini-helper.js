@@ -1,8 +1,8 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { PDFDocument } = require('pdf-lib');
-const { createCanvas, loadImage } = require('canvas');
+const { createCanvas, loadImage, ImageData } = require('canvas');
 
-// Polyfill DOMMatrix for Node.js
+// Polyfill browser APIs for Node.js
 if (typeof DOMMatrix === 'undefined') {
     global.DOMMatrix = class DOMMatrix {
         constructor() {
@@ -11,6 +11,9 @@ if (typeof DOMMatrix === 'undefined') {
         }
     };
 }
+
+// Use canvas ImageData
+global.ImageData = ImageData;
 
 const pdfjsLib = require('pdfjs-dist');
 
