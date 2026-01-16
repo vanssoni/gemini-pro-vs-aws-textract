@@ -63,6 +63,7 @@ class GeminiHelper {
                     batch.map(page => loadImage(page.content))
                 );
 
+                // Calculate cell size based on largest image
                 const cellWidth = Math.max(...images.map(img => img.width));
                 const cellHeight = Math.max(...images.map(img => img.height));
 
@@ -74,11 +75,22 @@ class GeminiHelper {
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, stitchCanvas.width, stitchCanvas.height);
 
-                // Draw each page
+                // Draw each page - scale to fit cell while maintaining aspect ratio
                 for (let j = 0; j < images.length; j++) {
+                    const img = images[j];
                     const col = j % cols;
                     const row = Math.floor(j / cols);
-                    ctx.drawImage(images[j], col * cellWidth, row * cellHeight);
+
+                    // Calculate scaling to fit within cell
+                    const scale = Math.min(cellWidth / img.width, cellHeight / img.height);
+                    const scaledWidth = img.width * scale;
+                    const scaledHeight = img.height * scale;
+
+                    // Center image in cell
+                    const x = col * cellWidth + (cellWidth - scaledWidth) / 2;
+                    const y = row * cellHeight + (cellHeight - scaledHeight) / 2;
+
+                    ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
                 }
 
                 stitchedImages.push(stitchCanvas.toBuffer('image/png'));
