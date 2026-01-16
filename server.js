@@ -12,13 +12,13 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
 
 // Configure multer for file uploads (store in memory)
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-        fileSize: 50 * 1024 * 1024 // 20MB limit
+        fileSize: 20 * 1024 * 1024 // 20MB limit
     },
     fileFilter: (req, file, cb) => {
         if (file.mimetype === 'application/pdf') {
@@ -40,15 +40,14 @@ app.post('/api/extract/gemini', upload.single('pdf'), async (req, res) => {
         const startTime = Date.now();
 
         try {
-            const result = await geminiHelper.extractTextFromPDF(fileBuffer, req.file.mimetype);
+            const text = await geminiHelper.extractTextFromPDF(fileBuffer, req.file.mimetype);
             const time = Date.now() - startTime;
 
             res.json({
                 success: true,
                 service: 'gemini',
-                text: result.text,
+                text: text,
                 time: time,
-                stitchedPdf: result.stitchedPdf, // Base64 encoded stitched PDF
                 error: null
             });
         } catch (error) {

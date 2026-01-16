@@ -1,9 +1,6 @@
 // DOM Elements
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
-// Download stitched PDF button
-const downloadStitchedBtn = document.getElementById('downloadStitchedBtn');
-// New upload button
 const uploadButton = document.getElementById('uploadButton');
 const fileInfo = document.getElementById('fileInfo');
 const fileName = document.getElementById('fileName');
@@ -64,20 +61,6 @@ dropzone.addEventListener('click', (e) => {
     }
 });
 
-// Download stitched PDF button
-downloadStitchedBtn.addEventListener('click', () => {
-    if (stitchedPdfBlob) {
-        const url = URL.createObjectURL(stitchedPdfBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'stitched-pdf.pdf';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-});
-
 // Copy buttons
 copyGemini.addEventListener('click', () => copyToClipboard(geminiText.textContent, copyGemini));
 copyTextract.addEventListener('click', () => copyToClipboard(textractText.textContent, copyTextract));
@@ -125,31 +108,32 @@ function formatFileSize(bytes) {
 async function processFile() {
     if (!selectedFile) return;
 
-    // Show loading
+    // Show loading briefly
     uploadSection.style.display = 'none';
     loadingSection.style.display = 'block';
     resultsSection.style.display = 'none';
 
-    // Show results section
+    // Show results section immediately
     setTimeout(() => {
         loadingSection.style.display = 'none';
         resultsSection.style.display = 'block';
     }, 100);
 
     // Reset results to loading state
-    geminiText.innerHTML = '<p class="placeholder-text">Stitching PDF & processing with Gemini...</p>';
+    geminiText.innerHTML = '<p class="placeholder-text">Processing with Gemini...</p>';
     textractText.innerHTML = '<p class="placeholder-text">Processing with Textract...</p>';
     geminiTime.querySelector('.time-value').textContent = '...';
     textractTime.querySelector('.time-value').textContent = '...';
 
-    // Create FormData for both services (backend will stitch for Gemini)
+    // Create separate FormData for Gemini
     const formDataGemini = new FormData();
     formDataGemini.append('pdf', selectedFile);
 
+    // Create separate FormData for Textract
     const formDataTextract = new FormData();
     formDataTextract.append('pdf', selectedFile);
 
-    // Call both endpoints in parallel
+    // Call both endpoints in parallel - they will complete independently
     const geminiPromise = fetch('/api/extract/gemini', {
         method: 'POST',
         body: formDataGemini
@@ -176,6 +160,7 @@ async function processFile() {
         });
     });
 
+    // Wait for both to complete (but they update UI independently)
     await Promise.allSettled([geminiPromise, textractPromise]);
 }
 
@@ -190,23 +175,7 @@ function displayGeminiResult(data) {
         geminiTime.querySelector('.time-value').textContent = formatTime(data.time);
         geminiTime.querySelector('.time-value').style.color = '#48bb78';
         geminiCharCount.textContent = `${data.text.length.toLocaleString()} characters`;
-
-        // Store stitched PDF for download
-        if (data.stitchedPdf) {
-            stitchedPdfBlob = base64ToBlob(data.stitchedPdf, 'application/pdf');
-            document.getElementById('downloadStitchedBtn').style.display = 'block';
-        }
     }
-}
-
-function base64ToBlob(base64, mimeType) {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: mimeType });
 }
 
 function displayTextractResult(data) {
