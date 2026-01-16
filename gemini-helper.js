@@ -29,7 +29,7 @@ class GeminiHelper {
      * @returns {Promise<{stitchedPdf: Buffer, pageCount: number}>}
      */
     async stitchPDFPages(pdfBuffer) {
-        const pdfDoc = await PDFDocument.load(pdfBuffer);
+        const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
         const pages = pdfDoc.getPages();
         const pageCount = pages.length;
 
