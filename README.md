@@ -10,7 +10,7 @@ Compare PDF text extraction between **Google Gemini 3 Pro** and **AWS Textract**
 - ⚡ **Non-Blocking Processing** - Results appear independently as each service completes
 - ⏱️ **Performance Metrics** - See extraction time for each service
 - 🎨 **Modern UI** - Beautiful dark theme with gradients and animations
-- 📋 **Copy to Clipboard** - Easy copying of extracted text
+- 📋 **Copy to Clipboard** - Easy copying of extracted text test
 
 ## Deploy to Vercel
 
