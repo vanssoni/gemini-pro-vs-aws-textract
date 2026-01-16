@@ -1,8 +1,9 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { PDFDocument } = require('pdf-lib');
 const { createCanvas, loadImage } = require('canvas');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
-// Polyfills for fetch, Headers, and Response in Node.js < 18
+// Polyfills for fetch
 if (!globalThis.fetch) {
     const fetch = require('node-fetch');
     globalThis.fetch = fetch;
@@ -24,39 +25,46 @@ class GeminiHelper {
     }
 
     /**
-     * Convert PDF pages to images and stitch 6 pages into 1 (2x3 grid)
+     * Convert PDF pages to images using pdfjs and stitch 6 pages into 1 (2x3 grid)
      * @param {Buffer} pdfBuffer - PDF file buffer
      * @returns {Promise<{stitchedPdf: Buffer, pageCount: number}>}
      */
     async stitchPDFPages(pdfBuffer) {
-        const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
-        const pages = pdfDoc.getPages();
-        const pageCount = pages.length;
+        console.log(`Loading PDF...`);
+
+        // Load PDF with pdfjs
+        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer) });
+        const pdfDoc = await loadingTask.promise;
+        const pageCount = pdfDoc.numPages;
 
         console.log(`Processing ${pageCount} pages...`);
 
         // Render each page to image
         const pageImages = [];
-        for (let i = 0; i < pageCount; i++) {
-            const page = pages[i];
-            const { width, height } = page.getSize();
+        const scale = 2; // Higher quality
 
-            // Create canvas for this page
-            const canvas = createCanvas(width * 2, height * 2); // 2x scale for quality
+        for (let i = 1; i <= pageCount; i++) {
+            const page = await pdfDoc.getPage(i);
+            const viewport = page.getViewport({ scale });
+
+            // Create canvas
+            const canvas = createCanvas(viewport.width, viewport.height);
             const ctx = canvas.getContext('2d');
 
-            // Fill white background
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Render PDF page to canvas
+            await page.render({
+                canvasContext: ctx,
+                viewport: viewport
+            }).promise;
 
-            // For simplicity, we'll use the page as-is
-            // In production, you'd render the actual PDF content
             pageImages.push({
                 width: canvas.width,
                 height: canvas.height,
                 buffer: canvas.toBuffer('image/png')
             });
         }
+
+        console.log(`Rendered ${pageCount} pages to images`);
 
         // Stitch pages (6 per image in 2x3 grid)
         const stitchedImages = [];
@@ -92,6 +100,8 @@ class GeminiHelper {
             stitchedImages.push(stitchCanvas.toBuffer('image/png'));
         }
 
+        console.log(`Created ${stitchedImages.length} stitched images`);
+
         // Create new PDF from stitched images
         const newPdf = await PDFDocument.create();
 
@@ -108,7 +118,7 @@ class GeminiHelper {
 
         const stitchedPdfBytes = await newPdf.save();
 
-        console.log(`Created ${stitchedImages.length} stitched pages from ${pageCount} original pages`);
+        console.log(`Created stitched PDF with ${stitchedImages.length} pages from ${pageCount} original pages`);
 
         return {
             stitchedPdf: Buffer.from(stitchedPdfBytes),
@@ -121,7 +131,7 @@ class GeminiHelper {
      * Stitches 6 pages into 1 before sending
      * @param {Buffer} fileBuffer - PDF file buffer  
      * @param {string} mimeType - File MIME type
-     * @returns {Promise<string>} Extracted text
+     * @returns {Promise<{text: string, stitchedPdf: string}>} Extracted text and stitched PDF base64
      */
     async extractTextFromPDF(fileBuffer, mimeType = 'application/pdf') {
         try {
