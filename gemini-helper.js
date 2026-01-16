@@ -17,7 +17,6 @@ class GeminiHelper {
         this.model = this.genAI.getGenerativeModel({
             model: "gemini-3-pro-preview",
             generationConfig: {
-                maxOutputTokens: 8192,
                 temperature: 0.1, // Lower temperature for more consistent extraction
             },
         });
