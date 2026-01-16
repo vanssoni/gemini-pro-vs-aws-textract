@@ -1,21 +1,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { PDFDocument } = require('pdf-lib');
-const { createCanvas, loadImage, ImageData } = require('canvas');
-
-// Polyfill browser APIs for Node.js
-if (typeof DOMMatrix === 'undefined') {
-    global.DOMMatrix = class DOMMatrix {
-        constructor() {
-            this.a = 1; this.b = 0; this.c = 0;
-            this.d = 1; this.e = 0; this.f = 0;
-        }
-    };
-}
-
-// Use canvas ImageData
-global.ImageData = ImageData;
-
-const pdfjsLib = require('pdfjs-dist');
+const { createCanvas, loadImage } = require('canvas');
+const { pdfToPng } = require('pdf-to-png-converter');
+const fs = require('fs').promises;
+const path = require('path');
+const os = require('os');
 
 // Polyfills for fetch
 if (!globalThis.fetch) {
@@ -39,121 +28,106 @@ class GeminiHelper {
     }
 
     /**
-     * Convert PDF pages to images using pdfjs and stitch 6 pages into 1 (2x3 grid)
-     * @param {Buffer} pdfBuffer - PDF file buffer
-     * @returns {Promise<{stitchedPdf: Buffer, pageCount: number}>}
+     * Convert PDF pages to images and stitch 6 pages into 1 (2x3 grid)
      */
     async stitchPDFPages(pdfBuffer) {
-        console.log(`Loading PDF...`);
+        const tempDir = path.join(os.tmpdir(), `pdf-${Date.now()}`);
+        await fs.mkdir(tempDir, { recursive: true });
 
-        // Load PDF with pdfjs
-        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer) });
-        const pdfDoc = await loadingTask.promise;
-        const pageCount = pdfDoc.numPages;
+        try {
+            console.log('Converting PDF to PNG images...');
 
-        console.log(`Processing ${pageCount} pages...`);
-
-        // Render each page to image
-        const pageImages = [];
-        const scale = 2; // Higher quality
-
-        for (let i = 1; i <= pageCount; i++) {
-            const page = await pdfDoc.getPage(i);
-            const viewport = page.getViewport({ scale });
-
-            // Create canvas
-            const canvas = createCanvas(viewport.width, viewport.height);
-            const ctx = canvas.getContext('2d');
-
-            // Render PDF page to canvas
-            await page.render({
-                canvasContext: ctx,
-                viewport: viewport
-            }).promise;
-
-            pageImages.push({
-                width: canvas.width,
-                height: canvas.height,
-                buffer: canvas.toBuffer('image/png')
+            // Convert PDF to PNG images
+            const pngPages = await pdfToPng(pdfBuffer, {
+                disableFontFace: false,
+                useSystemFonts: false,
+                viewportScale: 2.0,
+                outputFolder: tempDir
             });
-        }
 
-        console.log(`Rendered ${pageCount} pages to images`);
+            console.log(`Converted ${pngPages.length} pages to images`);
 
-        // Stitch pages (6 per image in 2x3 grid)
-        const stitchedImages = [];
-        const pagesPerImage = 6;
-        const cols = 2;
-        const rows = 3;
+            // Stitch pages (6 per image in 2x3 grid)
+            const stitchedImages = [];
+            const pagesPerImage = 6;
+            const cols = 2;
+            const rows = 3;
 
-        for (let i = 0; i < pageImages.length; i += pagesPerImage) {
-            const batch = pageImages.slice(i, i + pagesPerImage);
+            for (let i = 0; i < pngPages.length; i += pagesPerImage) {
+                const batch = pngPages.slice(i, i + pagesPerImage);
 
-            if (batch.length === 0) continue;
+                if (batch.length === 0) continue;
 
-            // Get max dimensions
-            const cellWidth = Math.max(...batch.map(p => p.width));
-            const cellHeight = Math.max(...batch.map(p => p.height));
+                // Load images to get dimensions
+                const images = await Promise.all(
+                    batch.map(page => loadImage(page.content))
+                );
 
-            // Create stitched canvas
-            const stitchCanvas = createCanvas(cellWidth * cols, cellHeight * rows);
-            const ctx = stitchCanvas.getContext('2d');
+                const cellWidth = Math.max(...images.map(img => img.width));
+                const cellHeight = Math.max(...images.map(img => img.height));
 
-            // White background
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, stitchCanvas.width, stitchCanvas.height);
+                // Create stitched canvas
+                const stitchCanvas = createCanvas(cellWidth * cols, cellHeight * rows);
+                const ctx = stitchCanvas.getContext('2d');
 
-            // Draw each page
-            for (let j = 0; j < batch.length; j++) {
-                const img = await loadImage(batch[j].buffer);
-                const col = j % cols;
-                const row = Math.floor(j / cols);
-                ctx.drawImage(img, col * cellWidth, row * cellHeight, batch[j].width, batch[j].height);
+                // White background
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, stitchCanvas.width, stitchCanvas.height);
+
+                // Draw each page
+                for (let j = 0; j < images.length; j++) {
+                    const col = j % cols;
+                    const row = Math.floor(j / cols);
+                    ctx.drawImage(images[j], col * cellWidth, row * cellHeight);
+                }
+
+                stitchedImages.push(stitchCanvas.toBuffer('image/png'));
             }
 
-            stitchedImages.push(stitchCanvas.toBuffer('image/png'));
+            console.log(`Created ${stitchedImages.length} stitched images`);
+
+            // Create new PDF from stitched images
+            const newPdf = await PDFDocument.create();
+
+            for (const imageBuffer of stitchedImages) {
+                const image = await newPdf.embedPng(imageBuffer);
+                const page = newPdf.addPage([image.width, image.height]);
+                page.drawImage(image, {
+                    x: 0,
+                    y: 0,
+                    width: image.width,
+                    height: image.height,
+                });
+            }
+
+            const stitchedPdfBytes = await newPdf.save();
+
+            // Cleanup
+            await fs.rm(tempDir, { recursive: true, force: true });
+
+            console.log(`Created stitched PDF with ${stitchedImages.length} pages from ${pngPages.length} original pages`);
+
+            return {
+                stitchedPdf: Buffer.from(stitchedPdfBytes),
+                pageCount: stitchedImages.length
+            };
+        } catch (error) {
+            // Cleanup on error
+            try {
+                await fs.rm(tempDir, { recursive: true, force: true });
+            } catch (e) { }
+            throw error;
         }
-
-        console.log(`Created ${stitchedImages.length} stitched images`);
-
-        // Create new PDF from stitched images
-        const newPdf = await PDFDocument.create();
-
-        for (const imageBuffer of stitchedImages) {
-            const image = await newPdf.embedPng(imageBuffer);
-            const page = newPdf.addPage([image.width, image.height]);
-            page.drawImage(image, {
-                x: 0,
-                y: 0,
-                width: image.width,
-                height: image.height,
-            });
-        }
-
-        const stitchedPdfBytes = await newPdf.save();
-
-        console.log(`Created stitched PDF with ${stitchedImages.length} pages from ${pageCount} original pages`);
-
-        return {
-            stitchedPdf: Buffer.from(stitchedPdfBytes),
-            pageCount: stitchedImages.length
-        };
     }
 
     /**
      * Extract text from PDF using Google Gemini
-     * Stitches 6 pages into 1 before sending
-     * @param {Buffer} fileBuffer - PDF file buffer  
-     * @param {string} mimeType - File MIME type
-     * @returns {Promise<{text: string, stitchedPdf: string}>} Extracted text and stitched PDF base64
      */
     async extractTextFromPDF(fileBuffer, mimeType = 'application/pdf') {
         try {
-            // Stitch PDF pages
             const { stitchedPdf, pageCount } = await this.stitchPDFPages(fileBuffer);
             console.log(`Sending ${pageCount} stitched pages to Gemini`);
 
-            // Convert stitched PDF to base64
             const base64Data = stitchedPdf.toString('base64');
 
             const imagePart = {
@@ -169,7 +143,6 @@ class GeminiHelper {
             const response = await result.response;
             const text = response.text();
 
-            // Return both text and stitched PDF
             return {
                 text: text,
                 stitchedPdf: base64Data
