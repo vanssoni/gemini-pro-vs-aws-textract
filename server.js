@@ -131,7 +131,11 @@ app.use((error, req, res, next) => {
     res.status(500).json({ error: error.message });
 });
 
+
 app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
     console.log(`📄 Upload PDFs to compare Gemini 2.0 Flash vs AWS Textract`);
 });
+
+// Export for Vercel serverless
+module.exports = app;
