@@ -125,43 +125,85 @@ async function processFile() {
     geminiTime.querySelector('.time-value').textContent = '...';
     textractTime.querySelector('.time-value').textContent = '...';
 
-    // Create separate FormData for Gemini
-    const formDataGemini = new FormData();
-    formDataGemini.append('pdf', selectedFile);
+    try {
+        // Step 1: Get presigned URL
+        const presignedResponse = await fetch('/api/upload/presigned-url', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                filename: selectedFile.name,
+                contentType: selectedFile.type
+            })
+        });
 
-    // Create separate FormData for Textract
-    const formDataTextract = new FormData();
-    formDataTextract.append('pdf', selectedFile);
+        if (!presignedResponse.ok) {
+            throw new Error('Failed to get upload URL');
+        }
 
-    // Call both endpoints in parallel - they will complete independently
-    const geminiPromise = fetch('/api/extract/gemini', {
-        method: 'POST',
-        body: formDataGemini
-    }).then(res => res.json()).then(data => {
-        displayGeminiResult(data);
-    }).catch(error => {
-        console.error('Gemini request error:', error);
+        const { uploadUrl, key } = await presignedResponse.json();
+
+        // Step 2: Upload directly to S3
+        const uploadResponse = await fetch(uploadUrl, {
+            method: 'PUT',
+            body: selectedFile,
+            headers: {
+                'Content-Type': selectedFile.type
+            }
+        });
+
+        if (!uploadResponse.ok) {
+            throw new Error('Failed to upload file to S3');
+        }
+
+        // Step 3: Process with both services in parallel
+        const geminiPromise = fetch('/api/extract/gemini-s3', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ key })
+        }).then(res => res.json()).then(data => {
+            displayGeminiResult(data);
+        }).catch(error => {
+            console.error('Gemini request error:', error);
+            displayGeminiResult({
+                success: false,
+                error: error.message
+            });
+        });
+
+        const textractPromise = fetch('/api/extract/textract-s3', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ key })
+        }).then(res => res.json()).then(data => {
+            displayTextractResult(data);
+        }).catch(error => {
+            console.error('Textract request error:', error);
+            displayTextractResult({
+                success: false,
+                error: error.message
+            });
+        });
+
+        // Wait for both to complete
+        await Promise.allSettled([geminiPromise, textractPromise]);
+
+    } catch (error) {
+        console.error('Upload error:', error);
         displayGeminiResult({
             success: false,
-            error: error.message
+            error: 'Upload failed: ' + error.message
         });
-    });
-
-    const textractPromise = fetch('/api/extract/textract', {
-        method: 'POST',
-        body: formDataTextract
-    }).then(res => res.json()).then(data => {
-        displayTextractResult(data);
-    }).catch(error => {
-        console.error('Textract request error:', error);
         displayTextractResult({
             success: false,
-            error: error.message
+            error: 'Upload failed: ' + error.message
         });
-    });
-
-    // Wait for both to complete (but they update UI independently)
-    await Promise.allSettled([geminiPromise, textractPromise]);
+    }
 }
 
 function displayGeminiResult(data) {
